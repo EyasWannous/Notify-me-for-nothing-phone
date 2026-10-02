@@ -1,0 +1,19 @@
+{
+  "blackFriday": "2026-11-27",
+  "minPriceAed": 600,
+  "maxPriceAed": 4000,
+  "alertBelow": { "A": 1500, "B": 1250 },
+  "targets": [
+    { "name": "Jarir 8/256 White",            "plan": "A", "url": "https://www.jarir.com/ae-en/nothing-phone-4a-smartphones-677375.html" },
+    { "name": "Sharaf DG 8/256 Black",        "plan": "A", "url": "https://uae.sharafdg.com/product/nothing-phone-4a-5g-256gb-8gb-ram-black-dual-sim-smartphone/" },
+    { "name": "Amazon.ae 8/256 Black",        "plan": "A", "url": "https://www.amazon.ae/dp/B0GQGPX1M1/" },
+    { "name": "noon Supermall 8/256 Black",   "plan": "A", "url": "https://supermall.noon.com/uae-ar/~nothing/phone-4a-5g-dual-sim-black-8gb-ram-256gb-middle-east-version/N70306988V/p/" },
+    { "name": "Carrefour 8/256 White",        "plan": "A", "url": "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-256gb-5g-white-middle-east-version/p/6974434228078?offer=offer_1005322469&sellerId=22469&sid=DEFAULT" },
+
+    { "name": "MyShops 8/128 Black",          "plan": "B", "url": "https://myshops.ae/products/nothing-phone-4a-8-128gb-black" },
+    { "name": "Sharaf DG 8/128 White",        "plan": "B", "url": "https://uae.sharafdg.com/product/nothing-phone-4a-5g-128gb-8gb-ram-white-dual-sim-smartphone/" },
+    { "name": "Amazon.ae 8/128 Black",        "plan": "B", "url": "https://www.amazon.ae/dp/B0GMRLYTQT/" },
+    { "name": "Engage Stores 8/128 White",    "plan": "B", "url": "https://engagestores.ae/product/nothing-phone-4a-8gb-ram-128gb-storage-snapdragon-7s-gen-4-octa-core-processor-50mp-50mp-8mp-rear-camera-white/" },
+    { "name": "Carrefour 8/128 Black",        "plan": "B", "url": "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-128gb-5g-black-middle-east-version/p/6974434227675?offer=offer_160722548&sellerId=2548&sid=DEFAULT" }
+  ]
+}

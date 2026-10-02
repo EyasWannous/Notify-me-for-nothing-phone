@@ -1,0 +1,42 @@
+name: phone-watch
+
+on:
+  schedule:
+    - cron: "0 5 * * *"        # every day 09:00 UAE time (cron is in UTC)
+    - cron: "*/30 * 26-30 11 *" # every 30 min on 26-30 Nov (covers Black Friday + Cyber Monday)
+  workflow_dispatch: {}          # lets you press "Run workflow" manually
+
+permissions:
+  contents: write                # needed to commit state.json / history.csv back
+
+concurrency:
+  group: phone-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Run checks
+        run: dotnet run -c Release -- .
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Save state and history
+        run: |
+          git config user.name "phonewatch-bot"
+          git config user.email "phonewatch-bot@users.noreply.github.com"
+          git add state.json history.csv
+          if ! git diff --cached --quiet; then
+            git commit -m "check $(date -u '+%Y-%m-%d %H:%M') UTC"
+            git pull --rebase
+            git push
+          fi
