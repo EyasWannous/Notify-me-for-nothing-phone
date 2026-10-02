@@ -2,8 +2,8 @@ name: phone-watch
 
 on:
   schedule:
-    - cron: "0 5 * * *"        # every day 09:00 UAE time (cron is in UTC)
-    - cron: "*/30 * 26-30 11 *" # every 30 min on 26-30 Nov (covers Black Friday + Cyber Monday)
+    - cron: "17 5 * * *"       # every day 09:17 UAE time (cron is in UTC)
+    - cron: "7,37 * 26-30 11 *" # twice an hour on 26-30 Nov (Black Friday + Cyber Monday)
   workflow_dispatch: {}          # lets you press "Run workflow" manually
 
 permissions:
@@ -27,6 +27,7 @@ jobs:
       - name: Run checks
         run: dotnet run -c Release -- .
         env:
+          SEND_SUMMARY: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '17 5 * * *' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 

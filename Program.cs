@@ -88,19 +88,41 @@ foreach (var plan in new[] { "A", "B" })
 if (rows.Any(x => x.r.Status is "Blocked" or "Error"))
     Console.WriteLine("Note: 'Blocked'/'Error' rows could not be read automatically - open those links by hand.\n");
 
+var sendSummary = string.Equals(Environment.GetEnvironmentVariable("SEND_SUMMARY"), "true", StringComparison.OrdinalIgnoreCase);
+var parts = new List<string>();
+
 if (alerts.Count > 0)
-{
-    var text = "Nothing Phone (4a) alerts:\n" + string.Join("\n", alerts);
-    Console.WriteLine("=== ALERTS ===\n" + text);
-    await SendTelegramAsync(text);
-}
+    parts.Add("ALERTS:\n" + string.Join("\n", alerts));
 else
-{
     Console.WriteLine("No changes worth an alert.");
+
+if (sendSummary)
+    parts.Add(BuildSummary(rows, now));
+
+if (parts.Count > 0)
+{
+    var text = "Nothing Phone (4a)\n\n" + string.Join("\n\n", parts);
+    Console.WriteLine("=== TELEGRAM MESSAGE ===\n" + text);
+    await SendTelegramAsync(text);
 }
 return 0;
 
 // ======================= functions =======================
+
+static string BuildSummary(List<(Target t, Result r)> rows, DateTime now)
+{
+    var sb = new StringBuilder($"Daily summary {now:dd MMM HH:mm}\n");
+    foreach (var plan in new[] { "A", "B" })
+    {
+        sb.Append(plan == "A" ? "Plan A (8/256): " : "Plan B (8/128): ");
+        var best = rows.Where(x => x.t.Plan == plan && x.r.Status == "InStock" && x.r.Price.HasValue)
+                       .OrderBy(x => x.r.Price).FirstOrDefault();
+        sb.AppendLine(best.t != null ? $"best in stock {best.t.Name} at AED {best.r.Price:N0}" : "nothing confirmed in stock");
+    }
+    var unreadable = rows.Count(x => x.r.Status is "Blocked" or "Error" or "Unknown");
+    sb.Append($"Could not read {unreadable} of {rows.Count} stores - check those by hand.");
+    return sb.ToString();
+}
 
 static DateTime DubaiNow()
 {
