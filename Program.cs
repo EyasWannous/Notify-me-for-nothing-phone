@@ -158,15 +158,34 @@ async Task<Result> CheckAsync(Target t)
 {
     try
     {
-        using var resp = await http.GetAsync(t.Url);
+        // Targets marked "via": "proxy" are fetched through your MonsterASP site (see PROXY_URL / PROXY_KEY).
+        var proxyUrl = Environment.GetEnvironmentVariable("PROXY_URL");
+        var proxyKey = Environment.GetEnvironmentVariable("PROXY_KEY");
+        var viaProxy = string.Equals(t.Via, "proxy", StringComparison.OrdinalIgnoreCase)
+                       && !string.IsNullOrWhiteSpace(proxyUrl) && !string.IsNullOrWhiteSpace(proxyKey);
+        var requestUrl = viaProxy
+            ? $"{proxyUrl!.TrimEnd('/')}/fetch?key={Uri.EscapeDataString(proxyKey!)}&url={Uri.EscapeDataString(t.Url)}"
+            : t.Url;
+
+        using var resp = await http.GetAsync(requestUrl);
         var body = await resp.Content.ReadAsStringAsync();
+        var code = (int)resp.StatusCode;
+        var tag = viaProxy ? " (via proxy)" : "";
 
-        if ((int)resp.StatusCode is 403 or 429 or 503 || LooksLikeBotWall(body))
-            return new Result("Blocked", null, $"HTTP {(int)resp.StatusCode} / bot protection");
-        if (!resp.IsSuccessStatusCode)
-            return new Result("Error", null, $"HTTP {(int)resp.StatusCode}");
+        if (viaProxy)
+        {
+            if (!resp.IsSuccessStatusCode) return new Result("Error", null, $"proxy HTTP {code}");
+            if (resp.Headers.TryGetValues("X-Upstream-Status", out var vals) && int.TryParse(vals.FirstOrDefault(), out var up))
+                code = up;
+        }
 
-        return Parse(body);
+        if (code is 403 or 429 or 503 || LooksLikeBotWall(body))
+            return new Result("Blocked", null, $"HTTP {code} / bot protection{tag}");
+        if (code < 200 || code > 299)
+            return new Result("Error", null, $"HTTP {code}{tag}");
+
+        var r = Parse(body, t.Url);
+        return viaProxy ? r with { Detail = r.Detail + tag } : r;
     }
     catch (Exception ex)
     {
@@ -181,8 +200,29 @@ static bool LooksLikeBotWall(string html)
     return Regex.IsMatch(html, "api-services-support@amazon|Type the characters you see|Enter the characters you see|_Incapsula_|px-captcha|cf-chl", RegexOptions.IgnoreCase);
 }
 
-Result Parse(string html)
+Result? ParseAmazon(string html)
 {
+    // First price shown in an "a-offscreen" span is normally the main offer's price.
+    decimal? price = null;
+    foreach (Match m in Regex.Matches(html, "class=\"a-offscreen\">([^<]{3,40})<"))
+    {
+        price = FindTextPrice(WebUtility.HtmlDecode(m.Groups[1].Value));
+        if (price != null) break;
+    }
+    if (html.Contains("id=\"add-to-cart-button\"")) return new Result("InStock", price, "amazon");
+    if (html.Contains("id=\"outOfStock\"") || Regex.IsMatch(html, "Currently unavailable", RegexOptions.IgnoreCase))
+        return new Result("OutOfStock", price, "amazon");
+    return null; // unsure - fall back to the generic text rules
+}
+
+Result Parse(string html, string url)
+{
+    if (url.Contains("amazon.", StringComparison.OrdinalIgnoreCase))
+    {
+        var az = ParseAmazon(html);
+        if (az != null) return az;
+    }
+
     // 1) schema.org JSON-LD (most reliable when a shop provides it)
     string? availability = null;
     decimal? ldPrice = null;
@@ -309,7 +349,7 @@ async Task SendTelegramAsync(string text)
 }
 
 // ======================= types =======================
-record Target(string Name, string Plan, string Url);
+record Target(string Name, string Plan, string Url, string? Via = null);
 record Result(string Status, decimal? Price, string Detail);
 class Config
 {
