@@ -10,9 +10,9 @@
     "Detail": "HTTP 403 / bot protection"
   },
   "https://www.amazon.ae/dp/B0GQGPX1M1/": {
-    "Status": "InStock",
-    "Price": 1491.66,
-    "Detail": "amazon (via proxy)"
+    "Status": "OutOfStock",
+    "Price": null,
+    "Detail": "amazon, redirected to B0GMRLYTQT (requested variant unavailable) (via proxy)"
   },
   "https://supermall.noon.com/uae-ar/~nothing/phone-4a-5g-dual-sim-black-8gb-ram-256gb-middle-east-version/N70306988V/p/": {
     "Status": "Error",
