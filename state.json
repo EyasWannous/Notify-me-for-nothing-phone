@@ -10,9 +10,9 @@
     "Detail": "HTTP 403 / bot protection"
   },
   "https://www.amazon.ae/dp/B0GQGPX1M1/": {
-    "Status": "Blocked",
-    "Price": null,
-    "Detail": "HTTP 200 / bot protection"
+    "Status": "InStock",
+    "Price": 1491.66,
+    "Detail": "amazon (via proxy)"
   },
   "https://supermall.noon.com/uae-ar/~nothing/phone-4a-5g-dual-sim-black-8gb-ram-256gb-middle-east-version/N70306988V/p/": {
     "Status": "Error",
@@ -35,9 +35,9 @@
     "Detail": "HTTP 403 / bot protection"
   },
   "https://www.amazon.ae/dp/B0GMRLYTQT/": {
-    "Status": "Blocked",
-    "Price": null,
-    "Detail": "HTTP 200 / bot protection"
+    "Status": "InStock",
+    "Price": 1491.66,
+    "Detail": "amazon (via proxy)"
   },
   "https://engagestores.ae/product/nothing-phone-4a-8gb-ram-128gb-storage-snapdragon-7s-gen-4-octa-core-processor-50mp-50mp-8mp-rear-camera-white/": {
     "Status": "Blocked",
