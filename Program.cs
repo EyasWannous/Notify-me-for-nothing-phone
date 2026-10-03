@@ -77,10 +77,10 @@ foreach (var plan in new[] { "A", "B" })
         var price = r.Price.HasValue ? $"AED {r.Price:N0}" : "-";
         Console.WriteLine($"  {t.Name,-30} {r.Status,-11} {price,-12} {r.Detail}");
     }
-    var best = rows.Where(x => x.t.Plan == plan && x.r.Status == "InStock" && x.r.Price.HasValue)
-                   .OrderBy(x => x.r.Price).FirstOrDefault();
+    var best = rows.Where(x => x.t.Plan == plan && x.r.Status == "InStock")
+                   .OrderBy(x => x.r.Price ?? decimal.MaxValue).FirstOrDefault();
     Console.WriteLine(best.t != null
-        ? $"  -> best in stock: {best.t.Name} at AED {best.r.Price:N0}"
+        ? $"  -> best in stock: {best.t.Name} {(best.r.Price.HasValue ? $"at AED {best.r.Price:N0}" : "(price not read)")}"
         : "  -> nothing confirmed in stock");
     Console.WriteLine();
 }
@@ -115,9 +115,11 @@ static string BuildSummary(List<(Target t, Result r)> rows, DateTime now)
     foreach (var plan in new[] { "A", "B" })
     {
         sb.Append(plan == "A" ? "Plan A (8/256): " : "Plan B (8/128): ");
-        var best = rows.Where(x => x.t.Plan == plan && x.r.Status == "InStock" && x.r.Price.HasValue)
-                       .OrderBy(x => x.r.Price).FirstOrDefault();
-        sb.AppendLine(best.t != null ? $"best in stock {best.t.Name} at AED {best.r.Price:N0}" : "nothing confirmed in stock");
+        var best = rows.Where(x => x.t.Plan == plan && x.r.Status == "InStock")
+                       .OrderBy(x => x.r.Price ?? decimal.MaxValue).FirstOrDefault();
+        sb.AppendLine(best.t != null
+            ? $"best in stock {best.t.Name} {(best.r.Price.HasValue ? $"at AED {best.r.Price:N0}" : "(price not read)")}"
+            : "nothing confirmed in stock");
     }
     var unreadable = rows.Count(x => x.r.Status is "Blocked" or "Error" or "Unknown");
     sb.Append($"Could not read {unreadable} of {rows.Count} stores - check those by hand.");
@@ -202,14 +204,21 @@ static bool LooksLikeBotWall(string html)
 
 Result? ParseAmazon(string html)
 {
-    // First price shown in an "a-offscreen" span is normally the main offer's price.
+    // Only trust a price inside the main price block; a wrong price is worse than no price.
     decimal? price = null;
-    foreach (Match m in Regex.Matches(html, "class=\"a-offscreen\">([^<]{3,40})<"))
+    foreach (var anchor in new[] { "priceToPay", "corePriceDisplay_desktop_feature_div", "corePrice_feature_div", "apex_desktop" })
     {
-        price = FindTextPrice(WebUtility.HtmlDecode(m.Groups[1].Value));
-        if (price != null) break;
+        var i = html.IndexOf(anchor, StringComparison.Ordinal);
+        if (i < 0) continue;
+        var seg = html.Substring(i, Math.Min(1500, html.Length - i));
+        var m = Regex.Match(seg, "class=\"a-offscreen\">([^<]{3,40})<");
+        if (m.Success)
+        {
+            price = FindTextPrice(WebUtility.HtmlDecode(m.Groups[1].Value));
+            if (price != null) break;
+        }
     }
-    if (html.Contains("id=\"add-to-cart-button\"")) return new Result("InStock", price, "amazon");
+    if (html.Contains("id=\"add-to-cart-button\"")) return new Result("InStock", price, price == null ? "amazon, price not found" : "amazon");
     if (html.Contains("id=\"outOfStock\"") || Regex.IsMatch(html, "Currently unavailable", RegexOptions.IgnoreCase))
         return new Result("OutOfStock", price, "amazon");
     return null; // unsure - fall back to the generic text rules
