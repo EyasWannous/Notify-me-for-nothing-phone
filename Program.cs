@@ -202,8 +202,21 @@ static bool LooksLikeBotWall(string html)
     return Regex.IsMatch(html, "api-services-support@amazon|Type the characters you see|Enter the characters you see|_Incapsula_|px-captcha|cf-chl", RegexOptions.IgnoreCase);
 }
 
-Result? ParseAmazon(string html)
+Result? ParseAmazon(string html, string url)
 {
+    // Amazon sometimes shows a different variant (another ASIN) when the requested one is unavailable.
+    var req = Regex.Match(url, @"/dp/([A-Z0-9]{10})");
+    if (req.Success)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match m in Regex.Matches(html, "rel=\"canonical\"[^>]*?/dp/([A-Z0-9]{10})"))
+            seen.Add(m.Groups[1].Value);
+        foreach (Match m in Regex.Matches(html, "<input[^>]*(?:id|name)=\"ASIN\"[^>]*value=\"([A-Z0-9]{10})\""))
+            seen.Add(m.Groups[1].Value);
+        if (seen.Count > 0 && !seen.Contains(req.Groups[1].Value))
+            return new Result("OutOfStock", null, $"amazon, redirected to {seen.First()} (requested variant unavailable)");
+    }
+
     // Only trust a price inside the main price block; a wrong price is worse than no price.
     decimal? price = null;
     foreach (var anchor in new[] { "priceToPay", "corePriceDisplay_desktop_feature_div", "corePrice_feature_div", "apex_desktop" })
@@ -228,7 +241,7 @@ Result Parse(string html, string url)
 {
     if (url.Contains("amazon.", StringComparison.OrdinalIgnoreCase))
     {
-        var az = ParseAmazon(html);
+        var az = ParseAmazon(html, url);
         if (az != null) return az;
     }
 
