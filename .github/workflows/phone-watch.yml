@@ -37,9 +37,18 @@ jobs:
         run: |
           git config user.name "phonewatch-bot"
           git config user.email "phonewatch-bot@users.noreply.github.com"
-          git add state.json history.csv
-          if ! git diff --cached --quiet; then
+          BRANCH="${GITHUB_REF_NAME}"
+          # Keep our fresh results aside, then always build the commit on top of the LATEST remote branch.
+          # (Avoids "pull --rebase" conflicts when someone changed or deleted these files while the check was running.)
+          mkdir -p "$RUNNER_TEMP/keep"
+          cp -f state.json history.csv "$RUNNER_TEMP/keep/" 2>/dev/null || true
+          for attempt in 1 2 3; do
+            git fetch origin "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+            cp -f "$RUNNER_TEMP/keep/state.json" "$RUNNER_TEMP/keep/history.csv" . 2>/dev/null || true
+            git add state.json history.csv 2>/dev/null || true
+            if git diff --cached --quiet; then echo "Nothing to save."; break; fi
             git commit -m "check $(date -u '+%Y-%m-%d %H:%M') UTC"
-            git pull --rebase
-            git push
-          fi
+            if git push origin "HEAD:$BRANCH"; then break; fi
+            echo "Push failed (attempt $attempt), retrying..."; sleep 5
+          done

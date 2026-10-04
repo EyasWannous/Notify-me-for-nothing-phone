@@ -299,13 +299,36 @@ Result Parse(string html, string url)
 
     // 2) visible text fallback
     var text = VisibleText(html);
-    var price = ldPrice ?? FindTextPrice(text);
+    var price = ldPrice ?? FindMetaPrice(html) ?? FindTextPrice(text);
 
     if (Regex.IsMatch(text, @"out of stock|sold out|currently unavailable|temporarily unavailable|notify me when", RegexOptions.IgnoreCase))
         return new Result("OutOfStock", price, "text");
     if (Regex.IsMatch(text, @"add to cart|add to basket|buy now|add to bag", RegexOptions.IgnoreCase))
         return new Result("InStock", price, "text");
     return new Result("Unknown", price, "no stock marker found");
+}
+
+// Prices that shops publish in the page's meta tags (Shopify/WooCommerce themes etc.): og:price:amount, product:price:amount, itemprop="price".
+decimal? FindMetaPrice(string html)
+{
+    var patterns = new[]
+    {
+        "<meta[^>]+(?:property|name)=[\"'](?:og:price:amount|product:price:amount|twitter:data1)[\"'][^>]*content=[\"']([^\"']+)[\"']",
+        "<meta[^>]+content=[\"']([^\"']+)[\"'][^>]*(?:property|name)=[\"'](?:og:price:amount|product:price:amount)[\"']",
+        "itemprop=[\"']price[\"'][^>]*content=[\"']([^\"']+)[\"']",
+        "content=[\"']([^\"']+)[\"'][^>]*itemprop=[\"']price[\"']",
+        "[\"']price[\"']\\s*:\\s*[\"']?(\\d[\\d,]*(?:\\.\\d{1,2})?)[\"']?"   // "price": 1198.00 in embedded JSON
+    };
+    foreach (var pat in patterns)
+        foreach (Match m in Regex.Matches(html, pat, RegexOptions.IgnoreCase))
+        {
+            var raw = Regex.Match(WebUtility.HtmlDecode(m.Groups[1].Value), @"\d[\d,]*(?:\.\d{1,2})?").Value.Replace(",", "");
+            if (decimal.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) && v >= priceFloor && v <= cfg.MaxPriceAed)
+                return v;
+            // some shops store prices in the smallest unit (119800 = AED 1,198.00)
+            if (v / 100m >= priceFloor && v / 100m <= cfg.MaxPriceAed && v % 100 == 0) return v / 100m;
+        }
+    return null;
 }
 
 static bool FindOffer(JsonElement e, out string? availability, out decimal? price)

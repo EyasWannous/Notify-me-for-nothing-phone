@@ -1,0 +1,57 @@
+{
+  "https://www.jarir.com/ae-en/nothing-phone-4a-smartphones-677375.html": {
+    "Status": "OutOfStock",
+    "Price": 1419.00,
+    "Detail": "json-ld"
+  },
+  "https://uae.sharafdg.com/product/nothing-phone-4a-5g-256gb-8gb-ram-black-dual-sim-smartphone/": {
+    "Status": "Blocked",
+    "Price": null,
+    "Detail": "HTTP 403 / bot protection"
+  },
+  "https://www.amazon.ae/dp/B0GQGPX1M1/": {
+    "Status": "OutOfStock",
+    "Price": null,
+    "Detail": "amazon, redirected to B0GMRLYTQT (requested variant unavailable)"
+  },
+  "https://supermall.noon.com/uae-ar/~nothing/phone-4a-5g-dual-sim-black-8gb-ram-256gb-middle-east-version/N70306988V/p/": {
+    "Status": "Error",
+    "Price": null,
+    "Detail": "TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of 30 seconds elapsing."
+  },
+  "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-256gb-5g-white-middle-east-version/p/6974434228078?offer=offer_1005322469\u0026sellerId=22469\u0026sid=DEFAULT": {
+    "Status": "Blocked",
+    "Price": null,
+    "Detail": "HTTP 403 / bot protection"
+  },
+  "https://myshops.ae/products/nothing-phone-4a-8-128gb-black": {
+    "Status": "InStock",
+    "Price": null,
+    "Detail": "text"
+  },
+  "https://uae.sharafdg.com/product/nothing-phone-4a-5g-128gb-8gb-ram-white-dual-sim-smartphone/": {
+    "Status": "Blocked",
+    "Price": null,
+    "Detail": "HTTP 403 / bot protection"
+  },
+  "https://www.amazon.ae/dp/B0GMRLYTQT/": {
+    "Status": "InStock",
+    "Price": 1491.66,
+    "Detail": "amazon"
+  },
+  "https://engagestores.ae/product/nothing-phone-4a-8gb-ram-128gb-storage-snapdragon-7s-gen-4-octa-core-processor-50mp-50mp-8mp-rear-camera-white/": {
+    "Status": "Blocked",
+    "Price": null,
+    "Detail": "HTTP 403 / bot protection"
+  },
+  "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-128gb-5g-black-middle-east-version/p/6974434227675?offer=offer_160722548\u0026sellerId=2548\u0026sid=DEFAULT": {
+    "Status": "Unknown",
+    "Price": null,
+    "Detail": "no stock marker found"
+  },
+  "https://ae.nothing.tech/en/products/power-45w": {
+    "Status": "Error",
+    "Price": null,
+    "Detail": "HTTP 404"
+  }
+}
