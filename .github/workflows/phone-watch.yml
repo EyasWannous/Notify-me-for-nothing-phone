@@ -2,9 +2,9 @@ name: phone-watch
 
 on:
   schedule:
-    - cron: "17 5 * * *"       # every day 09:17 UAE time (cron is in UTC)
+    - cron: "17 5 * * *"        # every day 09:17 UAE time (cron is in UTC)
     - cron: "7,37 * 26-30 11 *" # twice an hour on 26-30 Nov (Black Friday + Cyber Monday)
-  workflow_dispatch: {}          # lets you press "Run workflow" manually
+  workflow_dispatch: {}          # lets you press "Run workflow" manually (and the Telegram /start does this)
 
 permissions:
   contents: write                # needed to commit state.json / history.csv back
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

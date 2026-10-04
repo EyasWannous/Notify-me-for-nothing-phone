@@ -1,176 +1,405 @@
-// ProbeSite - tiny ASP.NET Core app to test, from MonsterASP.NET's servers, which shops answer normally.
-// GET /probe?key=YOUR_KEY  -> JSON: this server's public IP + HTTP status for every store in targets.json.
+// PhoneWatch - daily stock/price checker for the Nothing Phone (4a) in the UAE.
+// Usage:  dotnet run -- [folderWithTargets.json]
+// Writes state.json (last result per store) and history.csv (one row per check) in that folder.
+// Optional Telegram alerts: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables.
+
+using System.Globalization;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
+var dir = args.Length > 0 ? args[0] : Directory.GetCurrentDirectory();
+var cfgPath = Path.Combine(dir, "targets.json");
+var statePath = Path.Combine(dir, "state.json");
+var historyPath = Path.Combine(dir, "history.csv");
 
-// Change this before deploying so strangers cannot trigger requests from your site.
-string Cfg(string name, string fallback = "") => builder.Configuration[name] is { Length: > 0 } v ? v : fallback;
+var jsonOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
-// Settings come from appsettings.json (next to the .dll) or environment variables. See appsettings.json.
-var probeKey = Cfg("PROBE_KEY", "change-me-before-deploy");
+if (!File.Exists(cfgPath))
+{
+    Console.Error.WriteLine($"targets.json not found in {dir}");
+    return 1;
+}
 
-// /fetch only forwards requests to these hosts (so nobody can use your site as an open proxy).
-var allowedHosts = Cfg("FETCH_ALLOWED_HOSTS", "www.amazon.ae,amazon.ae")
-    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+var cfg = JsonSerializer.Deserialize<Config>(File.ReadAllText(cfgPath), jsonOpts)!;
+decimal priceFloor = cfg.MinPriceAed; // lowered for accessories (plan "ACC"), whose prices are below a phone's
+var state = File.Exists(statePath)
+    ? JsonSerializer.Deserialize<Dictionary<string, Result>>(File.ReadAllText(statePath), jsonOpts) ?? new()
+    : new Dictionary<string, Result>();
 
-var fetchHttp = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All })
-{ Timeout = TimeSpan.FromSeconds(25) };
-fetchHttp.DefaultRequestHeaders.UserAgent.ParseAdd(
+using var http = new HttpClient(new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.All,
+    AllowAutoRedirect = true
+}) { Timeout = TimeSpan.FromSeconds(30) };
+http.DefaultRequestHeaders.UserAgent.ParseAdd(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
-fetchHttp.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
+http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
+http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
 
-app.MapGet("/", () => "ProbeSite is running.");
-
-app.MapGet("/probe", async (string? key, IWebHostEnvironment env) =>
+var now = DubaiNow();
+Console.WriteLine($"PhoneWatch  {now:yyyy-MM-dd HH:mm}");
+if (DateTime.TryParse(cfg.BlackFriday, out var bf))
 {
-    if (key != probeKey) return Results.Unauthorized();
+    var days = (bf.Date - now.Date).Days;
+    Console.WriteLine(days >= 0 ? $"Days to Black Friday ({bf:dd MMM}): {days}" : "Black Friday has passed.");
+}
+Console.WriteLine();
 
-    var cfgPath = Path.Combine(env.ContentRootPath, "targets.json");
-    using var cfg = JsonDocument.Parse(await File.ReadAllTextAsync(cfgPath));
-    var targets = cfg.RootElement.GetProperty("targets").EnumerateArray()
-        .Select(t => (name: t.GetProperty("name").GetString()!, url: t.GetProperty("url").GetString()!))
-        .ToList();
-    targets.Add(("telegram-api (connectivity only)", "https://api.telegram.org/"));
+var alerts = new List<string>();
+var rows = new List<(Target t, Result r)>();
+var rng = new Random();
 
-    using var http = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All })
-    { Timeout = TimeSpan.FromSeconds(20) };
-    http.DefaultRequestHeaders.UserAgent.ParseAdd(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
-    http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
+foreach (var t in cfg.Targets)
+{
+    var res = await CheckAsync(t);
+    rows.Add((t, res));
 
-    string ip;
-    try { ip = (await http.GetStringAsync("https://api.ipify.org")).Trim(); }
-    catch (Exception ex) { ip = "could not detect: " + ex.GetType().Name; }
+    state.TryGetValue(t.Url, out var prev);
+    var msg = Evaluate(t, prev, res);
+    if (msg != null) alerts.Add(msg);
 
-    var results = new List<object>();
-    foreach (var (name, url) in targets)
+    state[t.Url] = res;
+    AppendHistory(t, res);
+
+    await Task.Delay(rng.Next(1500, 3500)); // be polite to the shops
+}
+
+File.WriteAllText(statePath, JsonSerializer.Serialize(state, jsonOpts));
+
+// ---- summary ----
+foreach (var plan in new[] { "A", "B", "ACC" })
+{
+    var label = plan == "A" ? "PLAN A  (8GB + 256GB)" : plan == "B" ? "PLAN B  (8GB + 128GB)" : "ACCESSORIES";
+    if (!rows.Any(x => x.t.Plan == plan)) continue;
+    Console.WriteLine(label);
+    foreach (var (t, r) in rows.Where(x => x.t.Plan == plan).OrderBy(x => x.r.Status == "InStock" ? 0 : 1).ThenBy(x => x.r.Price ?? decimal.MaxValue))
     {
-        try
-        {
-            using var resp = await http.GetAsync(url);
-            var body = await resp.Content.ReadAsStringAsync();
-            var wall = Regex.IsMatch(body, "api-services-support@amazon|Type the characters you see|_Incapsula_|px-captcha|cf-chl|Just a moment", RegexOptions.IgnoreCase);
-            var hasPrice = Regex.IsMatch(body, @"(AED|Dhs?\.?|\bD)\s?\d[\d,]{2,}");
-            var real = hasPrice && !wall;
-            // For pages that are not real product pages, show the start of the text so we can see WHY (captcha, JS shell, redirect...).
-            var snippet = real ? null : Regex.Replace(Regex.Replace(body, "<(script|style)[^>]*>.*?</\\1>", " ", RegexOptions.Singleline | RegexOptions.IgnoreCase), "<[^>]+>|\\s+", " ").Trim();
-            if (snippet != null && snippet.Length > 160) snippet = snippet[..160];
-            var finalUrl = resp.RequestMessage?.RequestUri?.ToString();
-            results.Add(new { name, status = (int)resp.StatusCode, bytes = body.Length, botWall = wall, looksLikeRealPage = real, finalUrl = finalUrl == url ? null : finalUrl, snippet });
-        }
-        catch (Exception ex)
-        {
-            results.Add(new { name, status = 0, error = ex.GetType().Name + ": " + ex.Message });
-        }
-        await Task.Delay(1000);
+        var price = r.Price.HasValue ? $"AED {r.Price:N0}" : "-";
+        Console.WriteLine($"  {t.Name,-30} {r.Status,-11} {price,-12} {r.Detail}");
     }
-    return Results.Json(new { serverPublicIp = ip, checkedAt = DateTime.UtcNow, results },
-        new JsonSerializerOptions { WriteIndented = true });
-});
+    var best = rows.Where(x => x.t.Plan == plan && x.r.Status == "InStock")
+                   .OrderBy(x => x.r.Price ?? decimal.MaxValue).FirstOrDefault();
+    Console.WriteLine(best.t != null
+        ? $"  -> best in stock: {best.t.Name} {(best.r.Price.HasValue ? $"at AED {best.r.Price:N0}" : "(price not read)")}"
+        : "  -> nothing confirmed in stock");
+    Console.WriteLine();
+}
 
-// GET /fetch?key=KEY&url=ENCODED_URL -> returns the page body; the shop's real status is in the X-Upstream-Status header.
-app.MapGet("/fetch", async (string? key, string? url, HttpContext ctx) =>
+if (rows.Any(x => x.r.Status is "Blocked" or "Error"))
+    Console.WriteLine("Note: 'Blocked'/'Error' rows could not be read automatically - open those links by hand.\n");
+
+var sendSummary = string.Equals(Environment.GetEnvironmentVariable("SEND_SUMMARY"), "true", StringComparison.OrdinalIgnoreCase);
+var parts = new List<string>();
+
+if (alerts.Count > 0)
+    parts.Add("ALERTS:\n" + string.Join("\n", alerts));
+else
+    Console.WriteLine("No changes worth an alert.");
+
+if (sendSummary)
+    parts.Add(BuildSummary(rows, now));
+
+if (parts.Count > 0)
 {
-    if (key != probeKey) return Results.Unauthorized();
-    if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var u)
-        || (u.Scheme != "https" && u.Scheme != "http") || !allowedHosts.Contains(u.Host))
-        return Results.BadRequest("url missing or host not allowed");
+    var text = "Nothing Phone (4a)\n\n" + string.Join("\n\n", parts);
+    Console.WriteLine("=== TELEGRAM MESSAGE ===\n" + text);
+    await SendTelegramAsync(text);
+}
+return 0;
+
+// ======================= functions =======================
+
+// Telegram turns anything that looks like a web address (e.g. "Amazon.ae") into a link to that domain's home page.
+static string Plain(string name) => Regex.Replace(name, @"(?<=\w)\.(?=(ae|com|net|org)\b)", " ");
+
+static string BuildSummary(List<(Target t, Result r)> rows, DateTime now)
+{
+    var sb = new StringBuilder($"Daily summary {now:dd MMM HH:mm}\n");
+    foreach (var plan in new[] { "A", "B" })
+    {
+        sb.Append(plan == "A" ? "Plan A (8/256): " : "Plan B (8/128): ");
+        var best = rows.Where(x => x.t.Plan == plan && x.r.Status == "InStock")
+                       .OrderBy(x => x.r.Price ?? decimal.MaxValue).FirstOrDefault();
+        if (best.t != null)
+        {
+            sb.AppendLine($"best in stock {Plain(best.t.Name)} {(best.r.Price.HasValue ? $"at AED {best.r.Price:N0}" : "(price not read)")}");
+            sb.AppendLine(best.t.Url);
+        }
+        else sb.AppendLine("nothing confirmed in stock");
+    }
+
+    var acc = rows.Where(x => x.t.Plan == "ACC").ToList();
+    if (acc.Count > 0)
+    {
+        sb.AppendLine("\nAccessories:");
+        foreach (var (t, r) in acc)
+        {
+            sb.AppendLine($"{Plain(t.Name)}: {r.Status}{(r.Price.HasValue ? $" AED {r.Price:N0}" : "")}");
+            sb.AppendLine(t.Url);
+        }
+    }
+
+    var phones = rows.Where(x => x.t.Plan is "A" or "B").ToList();
+    var unreadable = phones.Count(x => x.r.Status is "Blocked" or "Error" or "Unknown");
+    sb.Append($"\nCould not read {unreadable} of {phones.Count} phone stores - check those by hand.");
+    return sb.ToString();
+}
+
+static DateTime DubaiNow()
+{
+    foreach (var id in new[] { "Asia/Dubai", "Arabian Standard Time" })
+    {
+        try { return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(id)); }
+        catch { /* try next id */ }
+    }
+    return DateTime.UtcNow.AddHours(4); // UAE is UTC+4 all year
+}
+
+string? Evaluate(Target t, Result? prev, Result cur)
+{
+    if (cur.Status != "InStock") return null;
+
+    var wasInStock = prev?.Status == "InStock";
+    var threshold = cfg.AlertBelow.TryGetValue(t.Plan, out var th) ? th : (decimal?)null;
+
+    if (!wasInStock)
+        return $"[{(t.Plan == "ACC" ? "Accessory" : "Plan " + t.Plan)}] BACK IN STOCK: {Plain(t.Name)}" + (cur.Price.HasValue ? $" at AED {cur.Price:N0}" : "") + $"\n{t.Url}";
+
+    if (cur.Price.HasValue && prev!.Price.HasValue && cur.Price < prev.Price)
+        return $"[{(t.Plan == "ACC" ? "Accessory" : "Plan " + t.Plan)}] PRICE DROP: {Plain(t.Name)} AED {prev.Price:N0} -> {cur.Price:N0}\n{t.Url}";
+
+    if (cur.Price.HasValue && threshold.HasValue && cur.Price <= threshold
+        && !(prev!.Price.HasValue && prev.Price <= threshold))
+        return $"[Plan {t.Plan}] UNDER YOUR LIMIT (AED {threshold:N0}): {Plain(t.Name)} at AED {cur.Price:N0}\n{t.Url}";
+
+    return null;
+}
+
+async Task<Result> CheckAsync(Target t)
+{
     try
     {
-        using var resp = await fetchHttp.GetAsync(u);
+        // Targets marked "via": "proxy" are fetched through your MonsterASP site (see PROXY_URL / PROXY_KEY).
+        var proxyUrl = Environment.GetEnvironmentVariable("PROXY_URL");
+        var proxyKey = Environment.GetEnvironmentVariable("PROXY_KEY");
+        var viaProxy = string.Equals(t.Via, "proxy", StringComparison.OrdinalIgnoreCase)
+                       && !string.IsNullOrWhiteSpace(proxyUrl) && !string.IsNullOrWhiteSpace(proxyKey);
+        var requestUrl = viaProxy
+            ? $"{proxyUrl!.TrimEnd('/')}/fetch?key={Uri.EscapeDataString(proxyKey!)}&url={Uri.EscapeDataString(t.Url)}"
+            : t.Url;
+
+        priceFloor = t.Plan == "ACC" ? 20 : cfg.MinPriceAed;
+        using var resp = await http.GetAsync(requestUrl);
         var body = await resp.Content.ReadAsStringAsync();
-        ctx.Response.Headers["X-Upstream-Status"] = ((int)resp.StatusCode).ToString();
-        return Results.Text(body, "text/html; charset=utf-8");
+        var code = (int)resp.StatusCode;
+        var tag = viaProxy ? " (via proxy)" : "";
+
+        if (viaProxy)
+        {
+            if (!resp.IsSuccessStatusCode) return new Result("Error", null, $"proxy HTTP {code}");
+            if (resp.Headers.TryGetValues("X-Upstream-Status", out var vals) && int.TryParse(vals.FirstOrDefault(), out var up))
+                code = up;
+        }
+
+        if (code is 403 or 429 or 503 || LooksLikeBotWall(body))
+            return new Result("Blocked", null, $"HTTP {code} / bot protection{tag}");
+        if (code < 200 || code > 299)
+            return new Result("Error", null, $"HTTP {code}{tag}");
+
+        var r = Parse(body, t.Url);
+        return viaProxy ? r with { Detail = r.Detail + tag } : r;
     }
     catch (Exception ex)
     {
-        return Results.Problem("upstream failed: " + ex.GetType().Name, statusCode: 502);
+        return new Result("Error", null, ex.GetType().Name + ": " + ex.Message);
     }
-});
-
-// ---------------- Telegram "/start" -> run the GitHub workflow ----------------
-var tgToken   = Cfg("TELEGRAM_BOT_TOKEN");
-var tgChat    = Cfg("TELEGRAM_CHAT_ID");
-var tgSecret  = Cfg("TELEGRAM_WEBHOOK_SECRET");
-var ghToken   = Cfg("GITHUB_TOKEN");
-var ghRepo    = Cfg("GITHUB_REPO");                  // e.g. EyasWannous/Notify-me-for-nothing-phone
-var ghFlow    = Cfg("GITHUB_WORKFLOW", "phone-watch.yml");
-var ghRef     = Cfg("GITHUB_REF", "main");
-var tgApi     = Cfg("TELEGRAM_API_BASE", "https://api.telegram.org");
-var ghApi     = Cfg("GITHUB_API_BASE", "https://api.github.com");
-var lastTrigger = DateTime.MinValue;
-var triggerLock = new object();
-
-var apiHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-apiHttp.DefaultRequestHeaders.UserAgent.ParseAdd("PhoneWatch-Trigger/1.0");
-
-async Task TgSendAsync(string text)
-{
-    using var c = new FormUrlEncodedContent(new Dictionary<string, string> { ["chat_id"] = tgChat, ["text"] = text });
-    await apiHttp.PostAsync($"{tgApi}/bot{tgToken}/sendMessage", c);
 }
 
-// One-time setup: open /telegram/setup?key=YOUR_PROBE_KEY in the browser to register the webhook.
-app.MapGet("/telegram/setup", async (string? key, HttpContext ctx) =>
+static bool LooksLikeBotWall(string html)
 {
-    if (key != probeKey) return Results.Unauthorized();
-    if (string.IsNullOrEmpty(tgToken) || string.IsNullOrEmpty(tgSecret)) return Results.BadRequest("TELEGRAM_BOT_TOKEN / TELEGRAM_WEBHOOK_SECRET missing");
-    var hookUrl = $"https://{ctx.Request.Host}/telegram/webhook";
-    using var c = new FormUrlEncodedContent(new Dictionary<string, string>
-    { ["url"] = hookUrl, ["secret_token"] = tgSecret, ["allowed_updates"] = "[\"message\"]" });
-    var resp = await apiHttp.PostAsync($"{tgApi}/bot{tgToken}/setWebhook", c);
-    return Results.Text($"webhook url: {hookUrl}\n{await resp.Content.ReadAsStringAsync()}");
-});
+    if (html.Length < 2000 && Regex.IsMatch(html, "captcha|access denied|robot|unusual traffic", RegexOptions.IgnoreCase))
+        return true;
+    return Regex.IsMatch(html, "api-services-support@amazon|Type the characters you see|Enter the characters you see|_Incapsula_|px-captcha|cf-chl", RegexOptions.IgnoreCase);
+}
 
-app.MapPost("/telegram/webhook", async (HttpRequest req) =>
+Result? ParseAmazon(string html, string url)
 {
-    // Only Telegram knows the secret header; only your own chat may trigger a run.
-    if (string.IsNullOrEmpty(tgSecret) || req.Headers["X-Telegram-Bot-Api-Secret-Token"] != tgSecret)
-        return Results.Unauthorized();
-
-    string? text = null; string? chatId = null;
-    try
+    // Amazon sometimes shows a different variant (another ASIN) when the requested one is unavailable.
+    var req = Regex.Match(url, @"/dp/([A-Z0-9]{10})");
+    if (req.Success)
     {
-        using var doc = await JsonDocument.ParseAsync(req.Body);
-        var msg = doc.RootElement.GetProperty("message");
-        text = msg.TryGetProperty("text", out var t) ? t.GetString() : null;
-        chatId = msg.GetProperty("chat").GetProperty("id").GetRawText();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match m in Regex.Matches(html, "rel=\"canonical\"[^>]*?/dp/([A-Z0-9]{10})"))
+            seen.Add(m.Groups[1].Value);
+        foreach (Match m in Regex.Matches(html, "<input[^>]*(?:id|name)=\"ASIN\"[^>]*value=\"([A-Z0-9]{10})\""))
+            seen.Add(m.Groups[1].Value);
+        if (seen.Count > 0 && !seen.Contains(req.Groups[1].Value))
+            return new Result("OutOfStock", null, $"amazon, redirected to {seen.First()} (requested variant unavailable)");
     }
-    catch { return Results.Ok(); }
 
-    if (chatId != tgChat) return Results.Ok();
-    var cmd = (text ?? "").Split(' ', '@')[0].ToLowerInvariant();
-    if (cmd is not ("/start" or "/check")) return Results.Ok();
-
-    lock (triggerLock)
+    // Only trust a price inside the main price block; a wrong price is worse than no price.
+    decimal? price = null;
+    foreach (var anchor in new[] { "priceToPay", "corePriceDisplay_desktop_feature_div", "corePrice_feature_div", "apex_desktop" })
     {
-        if ((DateTime.UtcNow - lastTrigger).TotalSeconds < 60)
+        var i = html.IndexOf(anchor, StringComparison.Ordinal);
+        if (i < 0) continue;
+        var seg = html.Substring(i, Math.Min(1500, html.Length - i));
+        var m = Regex.Match(seg, "class=\"a-offscreen\">([^<]{3,40})<");
+        if (m.Success)
         {
-            _ = TgSendAsync("A check was started less than a minute ago - please wait for its result.");
-            return Results.Ok();
+            price = FindTextPrice(WebUtility.HtmlDecode(m.Groups[1].Value));
+            if (price != null) break;
         }
-        lastTrigger = DateTime.UtcNow;
+    }
+    if (html.Contains("id=\"add-to-cart-button\"")) return new Result("InStock", price, price == null ? "amazon, price not found" : "amazon");
+    if (html.Contains("id=\"outOfStock\"") || Regex.IsMatch(html, "Currently unavailable", RegexOptions.IgnoreCase))
+        return new Result("OutOfStock", price, "amazon");
+    return null; // unsure - fall back to the generic text rules
+}
+
+Result Parse(string html, string url)
+{
+    if (url.Contains("amazon.", StringComparison.OrdinalIgnoreCase))
+    {
+        var az = ParseAmazon(html, url);
+        if (az != null) return az;
     }
 
+    // 1) schema.org JSON-LD (most reliable when a shop provides it)
+    string? availability = null;
+    decimal? ldPrice = null;
+    foreach (Match m in Regex.Matches(html, "<script[^>]*type=[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>",
+                 RegexOptions.Singleline | RegexOptions.IgnoreCase))
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(m.Groups[1].Value);
+            if (FindOffer(doc.RootElement, out var av, out var pr))
+            {
+                availability ??= av;
+                ldPrice ??= pr;
+            }
+        }
+        catch { /* ignore malformed JSON-LD */ }
+    }
+
+    if (ldPrice is { } p0 && (p0 < priceFloor || p0 > cfg.MaxPriceAed)) ldPrice = null;
+
+    if (availability != null)
+    {
+        var status = availability.Contains("InStock", StringComparison.OrdinalIgnoreCase) ||
+                     availability.Contains("LimitedAvailability", StringComparison.OrdinalIgnoreCase) ? "InStock"
+                   : availability.Contains("OutOfStock", StringComparison.OrdinalIgnoreCase) ||
+                     availability.Contains("SoldOut", StringComparison.OrdinalIgnoreCase) ? "OutOfStock"
+                   : availability.Contains("PreOrder", StringComparison.OrdinalIgnoreCase) ? "PreOrder" : "Unknown";
+        return new Result(status, ldPrice ?? FindTextPrice(VisibleText(html)), "json-ld");
+    }
+
+    // 2) visible text fallback
+    var text = VisibleText(html);
+    var price = ldPrice ?? FindTextPrice(text);
+
+    if (Regex.IsMatch(text, @"out of stock|sold out|currently unavailable|temporarily unavailable|notify me when", RegexOptions.IgnoreCase))
+        return new Result("OutOfStock", price, "text");
+    if (Regex.IsMatch(text, @"add to cart|add to basket|buy now|add to bag", RegexOptions.IgnoreCase))
+        return new Result("InStock", price, "text");
+    return new Result("Unknown", price, "no stock marker found");
+}
+
+static bool FindOffer(JsonElement e, out string? availability, out decimal? price)
+{
+    availability = null; price = null;
+    switch (e.ValueKind)
+    {
+        case JsonValueKind.Object:
+            if (e.TryGetProperty("availability", out var av) && av.ValueKind == JsonValueKind.String)
+            {
+                availability = av.GetString();
+                foreach (var key in new[] { "price", "lowPrice" })
+                    if (e.TryGetProperty(key, out var pr)) { price = ToDecimal(pr); if (price != null) break; }
+                return true;
+            }
+            foreach (var prop in e.EnumerateObject())
+                if (FindOffer(prop.Value, out availability, out price)) return true;
+            break;
+        case JsonValueKind.Array:
+            foreach (var item in e.EnumerateArray())
+                if (FindOffer(item, out availability, out price)) return true;
+            break;
+    }
+    return false;
+}
+
+static decimal? ToDecimal(JsonElement e) => e.ValueKind switch
+{
+    JsonValueKind.Number => e.GetDecimal(),
+    JsonValueKind.String when decimal.TryParse(e.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var d) => d,
+    _ => null
+};
+
+static string VisibleText(string html)
+{
+    html = Regex.Replace(html, "<(script|style|noscript)[^>]*>.*?</\\1>", " ", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+    html = Regex.Replace(html, "<[^>]+>", " ");
+    html = WebUtility.HtmlDecode(html);
+    return Regex.Replace(html, @"\s+", " ");
+}
+
+decimal? FindTextPrice(string text)
+{
+    // "AED 1,499.00", "D 1,499.00", "Dhs. 1499", "1,499.00 AED" - first value inside the plausible range wins
+    // (this skips installment amounts such as "D 125.75/month").
+    const string num = @"(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)";
+    var hits = new List<(int idx, decimal val)>();
+    foreach (Match m in Regex.Matches(text, @"(?<![A-Za-z])(?:AED|Dhs?\.?|D|د\.إ|درهم)\s?" + num))
+        if (TryNum(m.Groups[1].Value, out var v)) hits.Add((m.Index, v));
+    foreach (Match m in Regex.Matches(text, num + @"\s?(?:AED|Dhs?\b|درهم)"))
+        if (TryNum(m.Groups[1].Value, out var v)) hits.Add((m.Index, v));
+
+    foreach (var (_, val) in hits.OrderBy(h => h.idx))
+        if (val >= priceFloor && val <= cfg.MaxPriceAed) return val;
+    return null;
+
+    static bool TryNum(string s, out decimal v) =>
+        decimal.TryParse(s.Replace(",", ""), NumberStyles.Any, CultureInfo.InvariantCulture, out v);
+}
+
+void AppendHistory(Target t, Result r)
+{
+    var newFile = !File.Exists(historyPath);
+    var line = string.Join(",", now.ToString("yyyy-MM-dd HH:mm"), Csv(t.Name), t.Plan, r.Status,
+        r.Price?.ToString(CultureInfo.InvariantCulture) ?? "", Csv(r.Detail));
+    File.AppendAllText(historyPath, (newFile ? "time,store,plan,status,price,detail\n" : "") + line + "\n", Encoding.UTF8);
+    static string Csv(string s) => "\"" + s.Replace("\"", "\"\"") + "\"";
+}
+
+async Task SendTelegramAsync(string text)
+{
+    var token = Environment.GetEnvironmentVariable("TELEGRAM_BOT_TOKEN");
+    var chat = Environment.GetEnvironmentVariable("TELEGRAM_CHAT_ID");
+    if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chat)) return;
     try
     {
-        using var r = new HttpRequestMessage(HttpMethod.Post, $"{ghApi}/repos/{ghRepo}/actions/workflows/{ghFlow}/dispatches")
-        { Content = new StringContent($"{{\"ref\":\"{ghRef}\"}}", System.Text.Encoding.UTF8, "application/json") };
-        r.Headers.Authorization = new("Bearer", ghToken);
-        r.Headers.Accept.ParseAdd("application/vnd.github+json");
-        r.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
-        var resp = await apiHttp.SendAsync(r);
-        await TgSendAsync(resp.IsSuccessStatusCode
-            ? "Check started - the result arrives in about a minute."
-            : $"Could not start the check (GitHub answered {(int)resp.StatusCode}). Check the GitHub token.");
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["chat_id"] = chat, ["text"] = text, ["disable_web_page_preview"] = "true"
+        });
+        var resp = await http.PostAsync($"https://api.telegram.org/bot{token}/sendMessage", content);
+        Console.WriteLine(resp.IsSuccessStatusCode ? "Telegram alert sent." : $"Telegram failed: HTTP {(int)resp.StatusCode}");
     }
-    catch (Exception ex) { await TgSendAsync("Could not start the check: " + ex.GetType().Name); }
-    return Results.Ok();
-});
+    catch (Exception ex) { Console.WriteLine("Telegram failed: " + ex.Message); }
+}
 
-app.Run();
+// ======================= types =======================
+record Target(string Name, string Plan, string Url, string? Via = null);
+record Result(string Status, decimal? Price, string Detail);
+class Config
+{
+    public string BlackFriday { get; set; } = "2026-11-27";
+    public decimal MinPriceAed { get; set; } = 600;
+    public decimal MaxPriceAed { get; set; } = 4000;
+    public Dictionary<string, decimal> AlertBelow { get; set; } = new();
+    public List<Target> Targets { get; set; } = new();
+}

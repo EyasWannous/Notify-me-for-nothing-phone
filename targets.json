@@ -18,9 +18,10 @@
    "url": "https://uae.sharafdg.com/product/nothing-phone-4a-5g-256gb-8gb-ram-black-dual-sim-smartphone/"
   },
   {
-   "name": "Amazon.ae 8/256 Black",
+   "name": "Amazon UAE 8/256 Black",
    "plan": "A",
-   "url": "https://www.amazon.ae/dp/B0GQGPX1M1/"
+   "url": "https://www.amazon.ae/dp/B0GQGPX1M1/",
+   "via": "proxy"
   },
   {
    "name": "noon Supermall 8/256 Black",
@@ -43,9 +44,10 @@
    "url": "https://uae.sharafdg.com/product/nothing-phone-4a-5g-128gb-8gb-ram-white-dual-sim-smartphone/"
   },
   {
-   "name": "Amazon.ae 8/128 Black",
+   "name": "Amazon UAE 8/128 Black",
    "plan": "B",
-   "url": "https://www.amazon.ae/dp/B0GMRLYTQT/"
+   "url": "https://www.amazon.ae/dp/B0GMRLYTQT/",
+   "via": "proxy"
   },
   {
    "name": "Engage Stores 8/128 White",
@@ -58,29 +60,9 @@
    "url": "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-128gb-5g-black-middle-east-version/p/6974434227675?offer=offer_160722548&sellerId=2548&sid=DEFAULT"
   },
   {
-   "name": "Jumbo range page (8/256)",
-   "plan": "B",
-   "url": "https://www.jumbo.ae/nothing-phone-4a-and-4a-pro"
-  },
-  {
-   "name": "Jumbo 12/256 Black",
-   "plan": "A",
-   "url": "https://www.jumbo.ae/nothing-phone-4a-12gb-ram-5g-smartphone-black-256-gb.html"
-  },
-  {
-   "name": "Tech Market collection",
-   "plan": "A",
-   "url": "https://www.techmarket.ae/collections/nothing-phone-series/products/nothing-phone-4a"
-  },
-  {
-   "name": "noon.com 12/256 Black",
-   "plan": "A",
-   "url": "https://www.noon.com/uae-en/phone-4a-5g-dual-sim-black-12gb-ram-256gb-middle-east-version/N70289964V/p/"
-  },
-  {
-   "name": "Sharaf DG 12/256 White",
-   "plan": "A",
-   "url": "https://uae.sharafdg.com/product/nothing-phone-4a-5g-256gb-12gb-ram-white-dual-sim-smartphone/"
+   "name": "Nothing Power 45W charger (Nothing UAE store)",
+   "plan": "ACC",
+   "url": "https://ae.nothing.tech/en/products/power-45w"
   }
  ]
 }
