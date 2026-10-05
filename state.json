@@ -26,8 +26,8 @@
   },
   "https://myshops.ae/products/nothing-phone-4a-8-128gb-black": {
     "Status": "InStock",
-    "Price": null,
-    "Detail": "text"
+    "Price": 1198.00,
+    "Detail": "json-ld"
   },
   "https://uae.sharafdg.com/product/nothing-phone-4a-5g-128gb-8gb-ram-white-dual-sim-smartphone/": {
     "Status": "Blocked",
