@@ -25,7 +25,7 @@
     "Detail": "no stock marker found"
   },
   "https://myshops.ae/products/nothing-phone-4a-8-128gb-black": {
-    "Status": "InStock",
+    "Status": "OutOfStock",
     "Price": 1198.00,
     "Detail": "json-ld"
   },
