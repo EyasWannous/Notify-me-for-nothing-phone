@@ -15,9 +15,9 @@
     "Detail": "amazon, redirected to B0GMRLYTQT (requested variant unavailable) (via proxy)"
   },
   "https://supermall.noon.com/uae-ar/~nothing/phone-4a-5g-dual-sim-black-8gb-ram-256gb-middle-east-version/N70306988V/p/": {
-    "Status": "Blocked",
+    "Status": "Error",
     "Price": null,
-    "Detail": "HTTP 403 / bot protection"
+    "Detail": "TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of 30 seconds elapsing."
   },
   "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-256gb-5g-white-middle-east-version/p/6974434228078?offer=offer_1005322469\u0026sellerId=22469\u0026sid=DEFAULT": {
     "Status": "Unknown",
@@ -40,9 +40,9 @@
     "Detail": "amazon, price not found (via proxy)"
   },
   "https://engagestores.ae/product/nothing-phone-4a-8gb-ram-128gb-storage-snapdragon-7s-gen-4-octa-core-processor-50mp-50mp-8mp-rear-camera-white/": {
-    "Status": "Error",
+    "Status": "Blocked",
     "Price": null,
-    "Detail": "HttpRequestException: Name or service not known (engagestores.ae:443)"
+    "Detail": "HTTP 403 / bot protection"
   },
   "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-128gb-5g-black-middle-east-version/p/6974434227675?offer=offer_160722548\u0026sellerId=2548\u0026sid=DEFAULT": {
     "Status": "Unknown",
