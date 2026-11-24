@@ -10,9 +10,9 @@
     "Detail": "HTTP 403 / bot protection"
   },
   "https://www.amazon.ae/dp/B0GQGPX1M1/": {
-    "Status": "Blocked",
+    "Status": "OutOfStock",
     "Price": null,
-    "Detail": "HTTP 200 / bot protection (via proxy)"
+    "Detail": "amazon, redirected to B0GMRLYTQT (requested variant unavailable) (via proxy)"
   },
   "https://supermall.noon.com/uae-ar/~nothing/phone-4a-5g-dual-sim-black-8gb-ram-256gb-middle-east-version/N70306988V/p/": {
     "Status": "Error",
@@ -35,14 +35,14 @@
     "Detail": "HTTP 403 / bot protection"
   },
   "https://www.amazon.ae/dp/B0GMRLYTQT/": {
-    "Status": "Blocked",
-    "Price": null,
-    "Detail": "HTTP 200 / bot protection (via proxy)"
+    "Status": "InStock",
+    "Price": 1399.00,
+    "Detail": "amazon (via proxy)"
   },
   "https://engagestores.ae/product/nothing-phone-4a-8gb-ram-128gb-storage-snapdragon-7s-gen-4-octa-core-processor-50mp-50mp-8mp-rear-camera-white/": {
-    "Status": "Blocked",
-    "Price": null,
-    "Detail": "HTTP 403 / bot protection"
+    "Status": "OutOfStock",
+    "Price": 1999.00,
+    "Detail": "json-ld"
   },
   "https://www.carrefouruae.com/mafuae/en/smartphones/nothing-phone-4a-dual-sim-8gb-ram-128gb-5g-black-middle-east-version/p/6974434227675?offer=offer_160722548\u0026sellerId=2548\u0026sid=DEFAULT": {
     "Status": "Unknown",
